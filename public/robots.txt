@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://voiceforge-rayon-s-projects.vercel.app/sitemap.xml
