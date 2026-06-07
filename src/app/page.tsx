@@ -247,11 +247,6 @@ function PresetTab() {
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim()) return;
-    if (text.length > 2500) {
-      setError("Text exceeds 2,500 character limit. Please shorten your text.");
-      setStatus("error");
-      return;
-    }
     setStatus("loading");
     setError(null);
     setAudioSrc(null);
@@ -323,14 +318,9 @@ function PresetTab() {
 
       {/* Text input */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-foreground/80">
-            Text to speak
-          </label>
-          <span className={`text-xs ${text.length > 2500 ? "text-error" : text.length > 2000 ? "text-yellow-500" : "text-muted"}`}>
-            {text.length.toLocaleString()} / 2,500 chars
-          </span>
-        </div>
+        <label className="block text-sm font-medium text-foreground/80 mb-2">
+          Text to speak
+        </label>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -339,8 +329,8 @@ function PresetTab() {
           className="w-full p-3 rounded-lg bg-card border border-card-border text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent resize-none"
         />
         {text.length > 2500 && (
-          <p className="text-xs text-error mt-1">
-            Text exceeds 2,500 character limit. Please shorten your text.
+          <p className="text-xs text-muted mt-1">
+            Long text will be automatically split and merged.
           </p>
         )}
       </div>
@@ -374,11 +364,6 @@ function DesignTab() {
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim() || !voiceDescription.trim()) return;
-    if (text.length > 2500) {
-      setError("Text exceeds 2,500 character limit. Please shorten your text.");
-      setStatus("error");
-      return;
-    }
     setStatus("loading");
     setError(null);
     setAudioSrc(null);
@@ -464,14 +449,9 @@ function DesignTab() {
 
       {/* Text input */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium text-foreground/80">
-            Text to speak
-          </label>
-          <span className={`text-xs ${text.length > 2500 ? "text-error" : text.length > 2000 ? "text-yellow-500" : "text-muted"}`}>
-            {text.length.toLocaleString()} / 2,500 chars
-          </span>
-        </div>
+        <label className="block text-sm font-medium text-foreground/80 mb-2">
+          Text to speak
+        </label>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -480,8 +460,8 @@ function DesignTab() {
           className="w-full p-3 rounded-lg bg-card border border-card-border text-foreground placeholder:text-muted/60 focus:outline-none focus:border-accent resize-none"
         />
         {text.length > 2500 && (
-          <p className="text-xs text-error mt-1">
-            Text exceeds 2,500 character limit. Please shorten your text.
+          <p className="text-xs text-muted mt-1">
+            Long text will be automatically split and merged.
           </p>
         )}
       </div>
@@ -595,11 +575,6 @@ function CloneTab() {
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim() || !file) return;
-    if (text.length > 2500) {
-      setError("Text exceeds 2,500 character limit. Please shorten your text.");
-      setStatus("error");
-      return;
-    }
     setStatus("loading");
     setError(null);
     setAudioSrc(null);
