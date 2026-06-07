@@ -276,20 +276,37 @@ function PresetTab() {
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {VOICES.map((v) => (
-            <button
+            <div
               key={v.id}
-              onClick={() => setVoice(v.id)}
-              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${
+              className={`relative p-3 rounded-lg border transition-all ${
                 voice === v.id
                   ? "border-accent bg-accent-muted"
                   : "border-card-border bg-card hover:border-accent/50"
               }`}
             >
-              <span className="block text-sm font-medium">{v.label}</span>
-              <span className="block text-xs text-muted mt-0.5">
-                {v.description}
-              </span>
-            </button>
+              <button
+                onClick={() => setVoice(v.id)}
+                className="w-full text-left cursor-pointer"
+              >
+                <span className="block text-sm font-medium">{v.label}</span>
+                <span className="block text-xs text-muted mt-0.5">
+                  {v.description}
+                </span>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const audio = new Audio(`/voices/${v.id}.wav`);
+                  audio.play();
+                }}
+                className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-card border border-card-border text-muted hover:text-accent hover:border-accent transition-colors cursor-pointer"
+                title={`Preview ${v.label}`}
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
       </div>
