@@ -6,7 +6,7 @@ import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from 
 // Types
 // ---------------------------------------------------------------------------
 
-type Tab = "preset" | "design" | "clone";
+type Tab = "preset" | "design" | "clone" | "ebook";
 type Status = "idle" | "loading" | "success" | "error";
 
 interface VoiceOption {
@@ -796,6 +796,315 @@ function CloneTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Ebook to Audio Tab
+// ---------------------------------------------------------------------------
+
+interface EbookChapter {
+  id: number;
+  title: string;
+  text: string;
+  wordCount: number;
+}
+
+function EbookTab() {
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [chapters, setChapters] = useState<EbookChapter[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [voice, setVoice] = useState("Mia");
+  const [status, setStatus] = useState<"idle" | "parsing" | "converting" | "done">("idle");
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [results, setResults] = useState<{ id: number; title: string; audio: string }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const validateAndSetFile = useCallback((f: File) => {
+    setFileError(null);
+    const ext = f.name.split(".").pop()?.toLowerCase();
+    if (ext !== "epub" && ext !== "txt") {
+      setFileError("Only EPUB and TXT files are supported.");
+      return;
+    }
+    if (f.size > 50 * 1024 * 1024) {
+      setFileError("File too large. Maximum 50MB.");
+      return;
+    }
+    setFile(f);
+    setChapters([]);
+    setSelected(new Set());
+    setResults([]);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragging(false);
+      const f = e.dataTransfer.files[0];
+      if (f) validateAndSetFile(f);
+    },
+    [validateAndSetFile]
+  );
+
+  const handleParse = useCallback(async () => {
+    if (!file) return;
+    setStatus("parsing");
+    setError(null);
+    setChapters([]);
+    setResults([]);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/ebook/parse", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Parse failed");
+      const parsed: EbookChapter[] = data.chapters.map((c: EbookChapter) => ({
+        id: c.id,
+        title: c.title,
+        text: c.text || "",
+        wordCount: c.wordCount,
+      }));
+      setChapters(parsed);
+      setSelected(new Set(parsed.map((c) => c.id)));
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setStatus("idle");
+    }
+  }, [file]);
+
+  const toggleChapter = useCallback((id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (selected.size === chapters.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(chapters.map((c) => c.id)));
+    }
+  }, [selected.size, chapters]);
+
+  const handleConvert = useCallback(async () => {
+    if (selected.size === 0) return;
+    setStatus("converting");
+    setError(null);
+    setResults([]);
+    setProgress({ current: 0, total: selected.size });
+
+    const selectedChapters = chapters.filter((c) => selected.has(c.id));
+
+    let current = 0;
+    for (const ch of selectedChapters) {
+      setProgress({ current: current + 1, total: selectedChapters.length });
+      try {
+        const res = await fetch("/api/ebook/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: ch.text, voice }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Convert failed");
+        setResults((prev) => [...prev, { id: ch.id, title: ch.title, audio: data.audio }]);
+      } catch (err) {
+        setError(`Chapter "${ch.title}" failed: ${err instanceof Error ? err.message : "Unknown"}`);
+      }
+      current++;
+    }
+    setStatus("done");
+  }, [selected, chapters, voice]);
+
+  const playPreview = useCallback((audioBase64: string) => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+    }
+    const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+    previewAudioRef.current = audio;
+    audio.play();
+  }, []);
+
+  const downloadChapter = useCallback((title: string, audioBase64: string) => {
+    const link = document.createElement("a");
+    link.href = `data:audio/wav;base64,${audioBase64}`;
+    link.download = `${title.replace(/[^a-zA-Z0-9]/g, "_")}.wav`;
+    link.click();
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      {/* File upload */}
+      <div>
+        <label className="block text-sm font-medium text-foreground/80 mb-2">
+          Upload Ebook
+        </label>
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          className={`flex flex-col items-center justify-center p-8 rounded-lg border-2 border-dashed transition-colors cursor-pointer ${
+            dragging ? "border-accent bg-accent-muted"
+              : file ? "border-success/50 bg-success/5"
+              : "border-card-border bg-card hover:border-accent/50"
+          }`}
+        >
+          <input ref={inputRef} type="file" accept=".epub,.txt" onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) validateAndSetFile(f);
+          }} className="hidden" />
+          {file ? (
+            <>
+              <svg className="w-8 h-8 text-success mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="text-sm font-medium">{file.name}</span>
+              <span className="text-xs text-muted mt-1">
+                {(file.size / 1024 / 1024).toFixed(1)} MB &mdash; Click to replace
+              </span>
+            </>
+          ) : (
+            <>
+              <svg className="w-8 h-8 text-muted mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              <span className="text-sm text-muted">Drop an ebook here or click to browse</span>
+              <span className="text-xs text-muted/60 mt-1">EPUB, TXT &middot; Max 50 MB</span>
+            </>
+          )}
+        </div>
+        {fileError && <p className="text-xs text-error mt-1">{fileError}</p>}
+      </div>
+
+      {/* Parse button */}
+      {file && chapters.length === 0 && status !== "parsing" && (
+        <button onClick={handleParse}
+          className="w-full py-3 rounded-lg bg-accent text-white font-medium transition-colors hover:bg-accent-hover cursor-pointer">
+          Parse Chapters
+        </button>
+      )}
+      {status === "parsing" && (
+        <div className="flex items-center gap-2 text-accent">
+          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Parsing ebook...</span>
+        </div>
+      )}
+
+      {/* Chapter list */}
+      {chapters.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-foreground/80">
+              Chapters ({selected.size}/{chapters.length} selected)
+            </label>
+            <button onClick={toggleAll} className="text-xs text-accent hover:underline cursor-pointer">
+              {selected.size === chapters.length ? "Deselect All" : "Select All"}
+            </button>
+          </div>
+          <div className="max-h-60 overflow-y-auto rounded-lg border border-card-border bg-card divide-y divide-card-border">
+            {chapters.map((ch) => (
+              <label key={ch.id} className="flex items-center gap-3 px-3 py-2 hover:bg-accent-muted/30 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.has(ch.id)}
+                  onChange={() => toggleChapter(ch.id)}
+                  className="accent-accent"
+                />
+                <span className="flex-1 text-sm truncate">{ch.title}</span>
+                <span className="text-xs text-muted">{ch.wordCount.toLocaleString()} words</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Voice selector */}
+      {chapters.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-foreground/80 mb-2">Voice</label>
+          <div className="flex flex-wrap gap-2">
+            {VOICES.map((v) => (
+              <button key={v.id} onClick={() => setVoice(v.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                  voice === v.id ? "bg-accent text-white"
+                    : "bg-card border border-card-border text-muted hover:text-foreground hover:border-accent/50"
+                }`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Convert button */}
+      {chapters.length > 0 && status !== "converting" && (
+        <button onClick={handleConvert} disabled={selected.size === 0}
+          className="w-full py-3 rounded-lg bg-accent text-white font-medium transition-colors hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+          Convert Selected ({selected.size})
+        </button>
+      )}
+
+      {/* Progress */}
+      {status === "converting" && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-accent">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-sm">
+              Converting chapter {progress.current} of {progress.total}...
+            </span>
+          </div>
+          <div className="w-full bg-card rounded-full h-2">
+            <div className="bg-accent h-2 rounded-full transition-all"
+              style={{ width: `${(progress.current / progress.total) * 100}%` }} />
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm">{error}</div>
+      )}
+
+      {/* Results */}
+      {results.length > 0 && (
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-foreground/80">
+            Generated Audio ({results.length} chapters)
+          </label>
+          {results.map((r) => (
+            <div key={r.id} className="p-3 rounded-lg bg-card border border-card-border">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium truncate">{r.title}</span>
+                <div className="flex gap-2">
+                  <button onClick={() => playPreview(r.audio)}
+                    className="text-xs text-accent hover:underline cursor-pointer">Play</button>
+                  <button onClick={() => downloadChapter(r.title, r.audio)}
+                    className="text-xs text-accent hover:underline cursor-pointer">Download</button>
+                </div>
+              </div>
+              <audio controls src={`data:audio/wav;base64,${r.audio}`} className="w-full" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 
@@ -826,12 +1135,16 @@ export default function Home() {
           <TabButton active={tab === "clone"} onClick={() => setTab("clone")}>
             Voice Clone
           </TabButton>
+          <TabButton active={tab === "ebook"} onClick={() => setTab("ebook")}>
+            Ebook
+          </TabButton>
         </div>
 
         {/* Tab content */}
         {tab === "preset" && <PresetTab />}
         {tab === "design" && <DesignTab />}
         {tab === "clone" && <CloneTab />}
+        {tab === "ebook" && <EbookTab />}
       </main>
     </div>
   );
