@@ -244,6 +244,7 @@ function PresetTab() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const handleGenerate = useCallback(async () => {
     if (!text.trim()) return;
@@ -296,7 +297,12 @@ function PresetTab() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (previewAudioRef.current) {
+                    previewAudioRef.current.pause();
+                    previewAudioRef.current.currentTime = 0;
+                  }
                   const audio = new Audio(`/voices/${v.id}.wav`);
+                  previewAudioRef.current = audio;
                   audio.play();
                 }}
                 className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-full bg-card border border-card-border text-muted hover:text-accent hover:border-accent transition-colors cursor-pointer"
